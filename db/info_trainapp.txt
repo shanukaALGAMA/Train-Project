@@ -1,0 +1,21 @@
+mysql -u trainapp -p
+Enter password: Trainapp#1234
+
+mysql> USE trainapp
+
+mysql> SHOW TABLES;
++--------------------+
+| Tables_in_trainapp |
++--------------------+
+| users              |
++--------------------+
+
+mysql> DESCRIBE users;
++------------+--------------+------+-----+-------------------+-------------------+
+| Field      | Type         | Null | Key | Default           | Extra             |
++------------+--------------+------+-----+-------------------+-------------------+
+| train_id   | int          | NO   | PRI | NULL              | auto_increment    |
+| train_name | varchar(100) | NO   | UNI | NULL              |                   |
+| password   | varchar(256) | NO   |     | NULL              |                   |
+| created_at | timestamp    | YES  |     | CURRENT_TIMESTAMP | DEFAULT_GENERATED |
++------------+--------------+------+-----+-------------------+-------------------+

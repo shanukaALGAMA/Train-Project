@@ -1,0 +1,96 @@
+/* ====================================
+   SOLARIZED DARK THEME 
+   ==================================== */
+
+:root {
+  --bg: #0b0c0d;            /* ← NEW dark background */
+  --card-bg: #002b36;       /* ← ORIGINAL padding/card color stays */
+  --text: #859900;          /* green text */
+  --title-text: #93a1a1;
+  --blue: #268bd2;
+  --red: #dc322f;
+  --radius: 12px;
+}
+
+/* Global */
+body {
+  background: var(--bg);     /* ← ONLY this changed */
+  color: var(--text);
+  margin: 0;
+  font-family: "Inter", Arial, sans-serif;
+}
+
+/* Card / Page wrapper (unchanged color) */
+.page-wrapper {
+  max-width: 500px;
+  margin: 60px auto;
+  padding: 28px;
+  background: var(--card-bg);    /* ← ORIGINAL color */
+  border-radius: var(--radius);
+  box-shadow: 0px 0px 20px rgba(0, 0, 0, 0.4);
+}
+
+/* Titles */
+h1, h2, h3 {
+  color: var(--title-text);
+  text-align: center;
+}
+
+/* Inputs (unchanged) */
+input {
+  width: 100%;
+  padding: 12px;
+  margin-top: 10px;
+  margin-bottom: 16px;
+  border-radius: var(--radius);
+  border: 1px solid var(--text);
+  background: #073642;         /* ORIGINAL */
+  color: var(--text);
+  font-size: 16px;
+}
+
+/* Buttons (unchanged) */
+button {
+  width: 100%;
+  padding: 14px;
+  background: var(--blue);
+  color: white;
+  font-weight: bold;
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: 0.2s;
+}
+
+button:hover {
+  opacity: 0.85;
+}
+
+.logout-btn {
+  background: var(--red);
+}
+
+/* Location box (unchanged) */
+.location-box {
+  background: #073642;         /* ORIGINAL */
+  padding: 18px;
+  border-radius: var(--radius);
+  border: 1px solid var(--blue);
+  margin-top: 20px;
+  text-align: center;
+}
+
+/* Accuracy classes */
+.accuracy-ok { color: #859900; font-weight: bold; }
+.accuracy-warn { color: #b58900; font-weight: bold; }
+.accuracy-bad { color: #dc322f; font-weight: bold; }
+
+/* Animation */
+.fade-in {
+  animation: fadeIn 0.4s ease-in-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0px); }
+}
