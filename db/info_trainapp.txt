@@ -9,7 +9,7 @@ mysql> SHOW TABLES;
 +--------------------+
 | Tables_in_trainapp |
 +--------------------+
-| users              |
+| trains             |
 | zones              |
 +--------------------+
 
