@@ -18,7 +18,7 @@ router.post("/register", async (req, res) => {
 
   try {
     const [user] = await pool.query(
-      "SELECT * FROM users WHERE train_name = ?",
+      "SELECT * FROM trains WHERE train_name = ?",
       [train_name]
     );
 
@@ -29,7 +29,7 @@ router.post("/register", async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, 10);
 
     await pool.query(
-      "INSERT INTO users (train_name, password) VALUES (?, ?)",
+      "INSERT INTO trains (train_name, password) VALUES (?, ?)",
       [train_name, hashedPassword]
     );
 
@@ -51,7 +51,7 @@ router.post("/login", async (req, res) => {
 
   try {
     const [result] = await pool.query(
-      "SELECT * FROM users WHERE train_name = ?",
+      "SELECT * FROM trains WHERE train_name = ?",
       [train_name]
     );
 

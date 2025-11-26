@@ -1,21 +1,29 @@
 mysql -u trainapp -p
 Enter password: Trainapp#1234
 
+
 mysql> USE trainapp
+
 
 mysql> SHOW TABLES;
 +--------------------+
 | Tables_in_trainapp |
 +--------------------+
 | users              |
+| zones              |
 +--------------------+
 
-mysql> DESCRIBE users;
-+------------+--------------+------+-----+-------------------+-------------------+
-| Field      | Type         | Null | Key | Default           | Extra             |
-+------------+--------------+------+-----+-------------------+-------------------+
-| train_id   | int          | NO   | PRI | NULL              | auto_increment    |
-| train_name | varchar(100) | NO   | UNI | NULL              |                   |
-| password   | varchar(256) | NO   |     | NULL              |                   |
-| created_at | timestamp    | YES  |     | CURRENT_TIMESTAMP | DEFAULT_GENERATED |
-+------------+--------------+------+-----+-------------------+-------------------+
+
+mysql> DESCRIBE zones;
++-------------+--------------+------+-----+-------------------+-------------------+
+| Field       | Type         | Null | Key | Default           | Extra             |
++-------------+--------------+------+-----+-------------------+-------------------+
+| zone_id     | int          | NO   | PRI | NULL              | auto_increment    |
+| zone_name   | varchar(100) | NO   | UNI | NULL              |                   |
+| device_code | varchar(255) | NO   | UNI | NULL              |                   |
+| status      | tinyint(1)   | NO   |     | 0                 |                   |
+| checked_at  | timestamp    | YES  |     | CURRENT_TIMESTAMP | DEFAULT_GENERATED |
++-------------+--------------+------+-----+-------------------+-------------------+
+
+
+
