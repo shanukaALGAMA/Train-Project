@@ -11,6 +11,7 @@ export default function Dashboard() {
   } | null>(null);
 
   const [error, setError] = useState<string | null>(null);
+  const [apiStatus, setApiStatus] = useState("");
 
   const navigate = useNavigate();
 
@@ -41,6 +42,29 @@ export default function Dashboard() {
     fetchLocation();
   }, []);
 
+  // SEND ALARM/BRAKE COMMAND TO API
+  const sendCommandToAPI = async (
+    device: "ALARM" | "BRAKE",
+    state: "ON" | "OFF"
+  ) => {
+    try {
+      setApiStatus(`Sending ${device} ${state}...`);
+
+      const res = await fetch("http://localhost:4000/data/esp32/control", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ device, state }),
+      });
+
+      const data = await res.json();
+      setApiStatus(`${data.message}`);
+    } catch (err) {
+      setApiStatus("Failed to send command");
+    }
+  };
+
   return (
     <div className="page-wrapper fade-in">
       <h2>Dashboard</h2>
@@ -60,26 +84,66 @@ export default function Dashboard() {
               <strong>Location Source:</strong> {location.source}
             </p>
 
-            {/* Warning if IP-based or inaccurate */}
             {location.accuracy > 1500 && (
               <p style={{ color: "orange" }}>
-                ⚠️ Location is inaccurate (likely IP-based). Device may not have GPS.
+                ⚠️ Location is inaccurate (likely IP-based).
               </p>
             )}
           </div>
         ) : (
           !error && <p>Fetching location...</p>
         )}
+      </div>
+
+      <button onClick={fetchLocation} style={{ marginTop: "10px" }}>
+        Refresh Location
+      </button>
+
+      {/* RELAY CONTROL PANEL */}
+      <div style={{ marginTop: "30px" }}>
+        <h3>Relay Control Panel</h3>
+
+        {/* ALARM */}
+        <div style={{ marginBottom: "10px" }}>
+          <strong>ALARM:</strong>
+          <button
+            onClick={() => sendCommandToAPI("ALARM", "ON")}
+            style={{ marginLeft: "10px" }}
+          >
+            ON
+          </button>
+          <button
+            onClick={() => sendCommandToAPI("ALARM", "OFF")}
+            style={{ marginLeft: "10px" }}
+          >
+            OFF
+          </button>
         </div>
 
-        <button onClick={fetchLocation} style={{ marginTop: "10px" }}>
-        Refresh Location
-        </button>
-        <p> </p>
-        <p> </p>
-        <button className="logout-btn" onClick={logout}>
-            Logout
-        </button>
+        {/* BRAKE */}
+        <div>
+          <strong>BRAKE:</strong>
+          <button
+            onClick={() => sendCommandToAPI("BRAKE", "ON")}
+            style={{ marginLeft: "10px" }}
+          >
+            ON
+          </button>
+          <button
+            onClick={() => sendCommandToAPI("BRAKE", "OFF")}
+            style={{ marginLeft: "10px" }}
+          >
+            OFF
+          </button>
+        </div>
+
+        {apiStatus && <p style={{ marginTop: "10px" }}>{apiStatus}</p>}
+      </div>
+
+      <p> </p>
+      <button className="logout-btn" onClick={logout}>
+        Logout
+      </button>
     </div>
   );
 }
