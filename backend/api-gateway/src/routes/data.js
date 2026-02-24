@@ -55,4 +55,24 @@ router.get("/esp32/command", (req, res) => {
   res.json(esp32State);
 });
 
+// APP POLLS ZONE_1 STATUS FROM DB
+router.get("/zones/status", async (req, res) => {
+  try {
+    const response = await axios.get(`${SERVER_URL}/data/zones/status`);
+    res.json(response.data);
+  } catch (error) {
+    res.status(error.response?.status || 500).json({ error: "Failed to fetch zone status" });
+  }
+});
+
+// APP FETCHES ALL ZONES FOR MAP
+router.get("/zones/all", async (req, res) => {
+  try {
+    const response = await axios.get(`${SERVER_URL}/data/zones/all`);
+    res.json(response.data);
+  } catch (error) {
+    res.status(error.response?.status || 500).json({ error: "Failed to fetch zones" });
+  }
+});
+
 export default router;
