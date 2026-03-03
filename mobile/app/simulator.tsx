@@ -7,6 +7,8 @@ import {
     Modal,
     ScrollView,
     Alert,
+    PanResponder,
+    Animated,
 } from "react-native";
 import MapView, { Marker, PROVIDER_GOOGLE } from "react-native-maps";
 import Svg, { Circle } from "react-native-svg";
@@ -44,8 +46,6 @@ function haversine(lat1: number, lon1: number, lat2: number, lon2: number): numb
         Math.sin(dLon / 2) ** 2;
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
-
-
 // Google Maps dark style
 const DARK_MAP_STYLE = [
     { elementType: "geometry", stylers: [{ color: "#212121" }] },
@@ -70,7 +70,7 @@ const DARK_MAP_STYLE = [
     { featureType: "water", elementType: "labels.text.fill", stylers: [{ color: "#3d3d3d" }] },
 ];
 
-export default function DashboardScreen() {
+export default function SimulatorScreen() {
     const router = useRouter();
 
     // Location
@@ -81,7 +81,6 @@ export default function DashboardScreen() {
     } | null>(null);
     const [locationError, setLocationError] = useState<string | null>(null);
     const mapRef = useRef<MapView>(null);
-    const [headerTapCount, setHeaderTapCount] = useState(0);
 
     // Zones & distance
     const [allZones, setAllZones] = useState<ZoneStatus[]>([]);
@@ -96,6 +95,7 @@ export default function DashboardScreen() {
     const [alarmOverridden, setAlarmOverridden] = useState(false);
     const lastAlarmCmdRef = useRef<"ON" | "OFF" | null>(null);
     const lastBrakeCmdRef = useRef<"ON" | "OFF" | null>(null);
+
     const locationRef = useRef<{ lat: number; lon: number; accuracy: number } | null>(null);
     const clearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -111,53 +111,108 @@ export default function DashboardScreen() {
     const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     // ─────────────────────────────
-    // LIVE GPS (1-second updates)
+    // SIMULATED GPS (Joystick Control)
     // ─────────────────────────────
-    useEffect(() => {
-        let subscription: Location.LocationSubscription | null = null;
+    const joystickPan = useRef(new Animated.ValueXY()).current;
+    const joystickOffset = useRef({ x: 0, y: 0 });
+    const joystickInterval = useRef<ReturnType<typeof setInterval> | null>(null);
+    const MAX_DRAG = 40; // Max radius of the joystick
+    const BASE_SPEED = 0.00015; // Max degrees per tick (approx 16 meters)
 
-        (async () => {
-            const { status } = await Location.requestForegroundPermissionsAsync();
-            if (status !== "granted") {
-                setLocationError("Location permission denied.");
-                return;
-            }
+    const panResponder = useRef(
+        PanResponder.create({
+            onStartShouldSetPanResponder: () => true,
+            onPanResponderGrant: () => {
+                joystickPan.setOffset({
+                    x: (joystickPan.x as any)._value,
+                    y: (joystickPan.y as any)._value,
+                });
+                joystickPan.setValue({ x: 0, y: 0 });
 
-            subscription = await Location.watchPositionAsync(
-                {
-                    accuracy: Location.Accuracy.High,
-                    timeInterval: 1000,   // update every 1 second
-                    distanceInterval: 0,  // update even if not moved
-                },
-                (loc) => {
-                    const newLoc = {
-                        lat: loc.coords.latitude,
-                        lon: loc.coords.longitude,
-                        accuracy: loc.coords.accuracy ?? 0,
-                    };
-                    setLocation(newLoc);
-                    locationRef.current = newLoc;
+                // Start continuous movement loop
+                if (!joystickInterval.current) {
+                    joystickInterval.current = setInterval(() => {
+                        const { x, y } = joystickOffset.current;
+                        if (x === 0 && y === 0) return;
 
-                    // Initialize reference location if empty
-                    if (referenceLocRef.current) {
-                        const d = haversine(
-                            referenceLocRef.current.lat, referenceLocRef.current.lon,
-                            newLoc.lat, newLoc.lon
-                        );
-                        if (d > 0.05) { // 50 meters
-                            referenceLocRef.current = { lat: newLoc.lat, lon: newLoc.lon };
-                        }
-                    } else {
-                        referenceLocRef.current = { lat: newLoc.lat, lon: newLoc.lon };
-                    }
+                        // Calculate speed based on how far the stick is pushed
+                        const distancePct = Math.min(Math.sqrt(x * x + y * y) / MAX_DRAG, 1);
+                        const angle = Math.atan2(y, x);
+
+                        // Y axis on screen is inverted compared to latitude (up = Negative Y = Positive Lat)
+                        const dLat = -Math.sin(angle) * BASE_SPEED * distancePct;
+                        const dLon = Math.cos(angle) * BASE_SPEED * distancePct;
+
+                        handleMove(dLat, dLon);
+                    }, 100); // 10 ticks per second
                 }
-            );
-        })();
+            },
+            onPanResponderMove: (_, gestureState) => {
+                // Constrain drag to a circle
+                const distance = Math.sqrt(gestureState.dx ** 2 + gestureState.dy ** 2);
+                let { dx, dy } = gestureState;
 
-        return () => {
-            subscription?.remove();
-        };
-    }, []);
+                if (distance > MAX_DRAG) {
+                    dx = (dx / distance) * MAX_DRAG;
+                    dy = (dy / distance) * MAX_DRAG;
+                }
+
+                joystickPan.setValue({ x: dx, y: dy });
+                joystickOffset.current = { x: dx, y: dy };
+            },
+            onPanResponderRelease: () => {
+                joystickPan.flattenOffset();
+                Animated.spring(joystickPan, {
+                    toValue: { x: 0, y: 0 },
+                    friction: 5,
+                    useNativeDriver: false,
+                }).start();
+
+                joystickOffset.current = { x: 0, y: 0 };
+                if (joystickInterval.current) {
+                    clearInterval(joystickInterval.current);
+                    joystickInterval.current = null;
+                }
+            },
+            onPanResponderTerminate: () => {
+                joystickPan.flattenOffset();
+                Animated.spring(joystickPan, {
+                    toValue: { x: 0, y: 0 },
+                    friction: 5,
+                    useNativeDriver: false,
+                }).start();
+
+                joystickOffset.current = { x: 0, y: 0 };
+                if (joystickInterval.current) {
+                    clearInterval(joystickInterval.current);
+                    joystickInterval.current = null;
+                }
+            }
+        })
+    ).current;
+
+    const handleMove = (dLat: number, dLon: number) => {
+        setLocation(prev => {
+            if (!prev) return null;
+            const newLoc = { ...prev, lat: prev.lat + dLat, lon: prev.lon + dLon };
+            locationRef.current = newLoc;
+
+            // Initialize reference location if empty
+            if (referenceLocRef.current) {
+                const distFromRef = haversine(
+                    referenceLocRef.current.lat, referenceLocRef.current.lon,
+                    newLoc.lat, newLoc.lon
+                );
+
+                if (distFromRef >= 0.02) {
+                    referenceLocRef.current = { lat: newLoc.lat, lon: newLoc.lon };
+                }
+            } else {
+                referenceLocRef.current = { lat: newLoc.lat, lon: newLoc.lon };
+            }
+            return newLoc;
+        });
+    };
 
     // ─────────────────────────────
     // ALL ZONES POLLING (every 5 seconds)
@@ -293,7 +348,43 @@ export default function DashboardScreen() {
     }, [location, allZones]);
 
     useEffect(() => {
-        fetchAllZones();
+        // Initial fetch to set starting location near a real zone
+        const initializeSimulator = async () => {
+            try {
+                const res = await fetch(`${API_BASE}/data/zones/all`);
+                if (!res.ok) return;
+                const zones: ZoneStatus[] = await res.json();
+                // Start between Zone 1 and Zone 5 (closer to Zone 5)
+                const zone1 = zones.find(z => z.zone_name.includes("Zone 1"));
+                const zone5 = zones.find(z => z.zone_name.includes("Zone 5"));
+
+                if (zone1 && zone5 && zone1.latitude && zone1.longitude && zone5.latitude && zone5.longitude) {
+                    const lat1 = parseFloat(zone1.latitude as any);
+                    const lon1 = parseFloat(zone1.longitude as any);
+                    const lat5 = parseFloat(zone5.latitude as any);
+                    const lon5 = parseFloat(zone5.longitude as any);
+
+                    // 50% of the way from Zone 1 to Zone 5
+                    const lat = lat1 + (lat5 - lat1) * 0.5;
+                    const lon = lon1 + (lon5 - lon1) * 0.5;
+
+                    const initialLoc = { lat, lon, accuracy: 1 };
+                    setLocation(initialLoc);
+                    locationRef.current = initialLoc;
+                } else if (zones.length > 0 && zones[0].latitude && zones[0].longitude) {
+                    // Fallback to old behavior
+                    const lat = parseFloat(zones[0].latitude as any) - 0.005;
+                    const lon = parseFloat(zones[0].longitude as any);
+                    const initialLoc = { lat, lon, accuracy: 1 };
+                    setLocation(initialLoc);
+                    locationRef.current = initialLoc;
+                }
+
+                fetchAllZones();
+            } catch (_) { }
+        };
+
+        initializeSimulator();
         pollRef.current = setInterval(fetchAllZones, 5000);
         return () => {
             if (pollRef.current) clearInterval(pollRef.current);
@@ -325,7 +416,7 @@ export default function DashboardScreen() {
     const logout = () => {
         Alert.alert(
             "Logout",
-            "Are you sure you want to log out of SEIDS?",
+            "Are you sure you want to log out of the Simulator?",
             [
                 { text: "Cancel", style: "cancel" },
                 {
@@ -345,111 +436,110 @@ export default function DashboardScreen() {
     // ─────────────────────────────
     return (
         <View style={styles.container}>
-            {/* ── NOTIFICATION MODAL (danger → safe transition) ── */}
-            <Modal visible={!!notification} transparent animationType="fade">
-                <View style={styles.modalOverlay}>
-                    <View style={[
-                        styles.modalCard,
-                        notificationClearing && styles.modalCardSafe,
-                    ]}>
-                        {notificationClearing ? (
-                            /* ── SAFE MODE ── */
-                            <>
-                                <Text style={styles.modalTitleSafe}>✓ ZONE IS NOW SAFE</Text>
-                                <Text style={styles.modalZone}>{notification?.zone_name}</Text>
-                                <View style={styles.ringContainer}>
-                                    <Svg width={140} height={140} style={styles.svg}>
-                                        <Circle cx={70} cy={70} r={54} stroke="#238636" strokeWidth={10} fill="none" />
-                                    </Svg>
-                                    <View style={styles.ringCenter}>
-                                        <Text style={styles.ringDistValueSafe}>✓</Text>
-                                    </View>
-                                </View>
-                                <Text style={styles.modalStatusSafe}>Closing in 5 seconds...</Text>
-                            </>
-                        ) : (
-                            /* ── DANGER MODE ── */
-                            <>
-                                <Ionicons name="warning" size={48} color="#f85149" style={styles.modalIcon} />
-                                <Text style={styles.modalTitle}>DANGER DETECTED</Text>
-                                <Text style={styles.modalZone}>{notification?.zone_name}</Text>
-
-                                {/* Circular distance indicator */}
-                                {(() => {
-                                    const MAX_KM = 10;
-                                    const dist = notificationDistance ?? MAX_KM;
-                                    const clamped = Math.min(dist, MAX_KM);
-                                    const progress = 1 - clamped / MAX_KM;
-                                    const R = 54;
-                                    const circumference = 2 * Math.PI * R;
-                                    const strokeDash = circumference * progress;
-                                    return (
-                                        <View style={styles.ringContainer}>
-                                            <Svg width={140} height={140} style={styles.svg}>
-                                                <Circle cx={70} cy={70} r={R} stroke="#30363d" strokeWidth={10} fill="none" />
-                                                <Circle
-                                                    cx={70} cy={70} r={R}
-                                                    stroke="#da3633" strokeWidth={10} fill="none"
-                                                    strokeDasharray={`${strokeDash} ${circumference}`}
-                                                    strokeLinecap="round"
-                                                    rotation={-90} origin="70,70"
-                                                />
-                                            </Svg>
-                                            <View style={styles.ringCenter}>
-                                                <Text style={styles.ringDistValue}>
-                                                    {dist < 1 ? `${Math.round(dist * 1000)}` : dist.toFixed(2)}
-                                                </Text>
-                                                <Text style={styles.ringDistUnit}>
-                                                    {dist < 1 ? "m" : "km"}
-                                                </Text>
-                                            </View>
-                                        </View>
-                                    );
-                                })()}
-
-                                <Text style={styles.modalStatus}>
-                                    Status:{" "}
-                                    <Text style={styles.modalStatusValue}>
-                                        {STATUS_LABEL[notification?.status ?? 0]}
-                                    </Text>
-                                </Text>
-                                <Text style={styles.modalTime}>
-                                    {notification?.checked_at?.slice(0, 19).replace("T", " ")}
-                                </Text>
-                            </>
-                        )}
-
-                        {!notificationClearing ? (
-                            <TouchableOpacity
-                                style={[styles.dismissBtn, { backgroundColor: alarmOverridden ? "#6e7681" : "#da3633" }]}
-                                onPress={() => {
-                                    if (!alarmOverridden) {
-                                        alarmOverriddenRef.current = true;
-                                        setAlarmOverridden(true);
-
-                                        sendCommand("ALARM", "OFF");
-                                        lastAlarmCmdRef.current = "OFF";
-
-                                        if (lastBrakeCmdRef.current === "ON") {
-                                            sendCommand("BRAKE", "OFF");
-                                            lastBrakeCmdRef.current = "OFF";
-                                        }
-                                    }
-                                }}
-                                disabled={alarmOverridden}
-                            >
-                                <Text style={styles.dismissBtnText}>
-                                    {alarmOverridden ? "ALARM SILENCED" : "ACKNOWLEDGE & SILENCE"}
-                                </Text>
-                            </TouchableOpacity>
-                        ) : null}
-                    </View>
-                </View>
-            </Modal>
-
-
             {/* ── MAP (75%) ── */}
             <View style={styles.mapContainer}>
+                {/* ── NOTIFICATION OVERLAY (danger → safe transition) ── */}
+                {!!notification && (
+                    <View style={styles.modalOverlay}>
+                        <View style={[
+                            styles.modalCard,
+                            notificationClearing && styles.modalCardSafe,
+                        ]}>
+                            {notificationClearing ? (
+                                /* ── SAFE MODE ── */
+                                <>
+                                    <Text style={styles.modalTitleSafe}>✓ ZONE IS NOW SAFE</Text>
+                                    <Text style={styles.modalZone}>{notification?.zone_name}</Text>
+                                    <View style={styles.ringContainer}>
+                                        <Svg width={140} height={140} style={styles.svg}>
+                                            <Circle cx={70} cy={70} r={54} stroke="#238636" strokeWidth={10} fill="none" />
+                                        </Svg>
+                                        <View style={styles.ringCenter}>
+                                            <Text style={styles.ringDistValueSafe}>✓</Text>
+                                        </View>
+                                    </View>
+                                    <Text style={styles.modalStatusSafe}>Closing in 5 seconds...</Text>
+                                </>
+                            ) : (
+                                /* ── DANGER MODE ── */
+                                <>
+                                    <Ionicons name="warning" size={48} color="#f85149" style={styles.modalIcon} />
+                                    <Text style={styles.modalTitle}>DANGER DETECTED</Text>
+                                    <Text style={styles.modalZone}>{notification?.zone_name}</Text>
+
+                                    {/* Circular distance indicator */}
+                                    {(() => {
+                                        const MAX_KM = 10;
+                                        const dist = notificationDistance ?? MAX_KM;
+                                        const clamped = Math.min(dist, MAX_KM);
+                                        const progress = 1 - clamped / MAX_KM;
+                                        const R = 54;
+                                        const circumference = 2 * Math.PI * R;
+                                        const strokeDash = circumference * progress;
+                                        return (
+                                            <View style={styles.ringContainer}>
+                                                <Svg width={140} height={140} style={styles.svg}>
+                                                    <Circle cx={70} cy={70} r={R} stroke="#30363d" strokeWidth={10} fill="none" />
+                                                    <Circle
+                                                        cx={70} cy={70} r={R}
+                                                        stroke="#da3633" strokeWidth={10} fill="none"
+                                                        strokeDasharray={`${strokeDash} ${circumference}`}
+                                                        strokeLinecap="round"
+                                                        rotation={-90} origin="70,70"
+                                                    />
+                                                </Svg>
+                                                <View style={styles.ringCenter}>
+                                                    <Text style={styles.ringDistValue}>
+                                                        {dist < 1 ? `${Math.round(dist * 1000)}` : dist.toFixed(2)}
+                                                    </Text>
+                                                    <Text style={styles.ringDistUnit}>
+                                                        {dist < 1 ? "m" : "km"}
+                                                    </Text>
+                                                </View>
+                                            </View>
+                                        );
+                                    })()}
+
+                                    <Text style={styles.modalStatus}>
+                                        Status:{" "}
+                                        <Text style={styles.modalStatusValue}>
+                                            {STATUS_LABEL[notification?.status ?? 0]}
+                                        </Text>
+                                    </Text>
+                                    <Text style={styles.modalTime}>
+                                        {notification?.checked_at?.slice(0, 19).replace("T", " ")}
+                                    </Text>
+                                </>
+                            )}
+
+                            {!notificationClearing ? (
+                                <TouchableOpacity
+                                    style={[styles.dismissBtn, { backgroundColor: alarmOverridden ? "#6e7681" : "#da3633" }]}
+                                    onPress={() => {
+                                        if (!alarmOverridden) {
+                                            alarmOverriddenRef.current = true;
+                                            setAlarmOverridden(true);
+
+                                            sendCommand("ALARM", "OFF");
+                                            lastAlarmCmdRef.current = "OFF";
+
+                                            if (lastBrakeCmdRef.current === "ON") {
+                                                sendCommand("BRAKE", "OFF");
+                                                lastBrakeCmdRef.current = "OFF";
+                                            }
+                                        }
+                                    }}
+                                    disabled={alarmOverridden}
+                                >
+                                    <Text style={styles.dismissBtnText}>
+                                        {alarmOverridden ? "ALARM SILENCED" : "ACKNOWLEDGE & SILENCE"}
+                                    </Text>
+                                </TouchableOpacity>
+                            ) : null}
+                        </View>
+                    </View>
+                )}
+
                 {location ? (
                     <MapView
                         ref={mapRef}
@@ -547,20 +637,7 @@ export default function DashboardScreen() {
 
                 {/* Header bar on top of map */}
                 <View style={styles.headerBar}>
-                    <TouchableOpacity
-                        activeOpacity={1}
-                        onPress={() => {
-                            const next = headerTapCount + 1;
-                            if (next >= 7) {
-                                setHeaderTapCount(0);
-                                router.push("/simulator");
-                            } else {
-                                setHeaderTapCount(next);
-                            }
-                        }}
-                    >
-                        <Text style={styles.headerText}>SEIDS</Text>
-                    </TouchableOpacity>
+                    <Text style={styles.headerText}>SIMULATOR</Text>
                     {closestZone && (
                         <View style={[
                             styles.statusBadge,
@@ -578,14 +655,32 @@ export default function DashboardScreen() {
 
             {/* ── BOTTOM PANEL (25%) ── */}
             <View style={styles.bottomPanel}>
-                {/* Closest zone info centered */}
-                <View style={styles.zoneCenterContainer}>
-                    <Text style={styles.zoneNameCenter}>
-                        {closestZone ? `Nearest: ${closestZone.zone.zone_name}` : "Connecting to SEIDS..."}
-                    </Text>
-                    {closestZone && (
-                        <Text style={styles.zoneDistanceCenter}>{closestZone.distance}</Text>
-                    )}
+                <View style={styles.simulatorBottomContent}>
+                    {/* Closest zone info on the left */}
+                    <View style={styles.zoneCenterContainer}>
+                        <Text style={styles.zoneNameCenter}>
+                            {closestZone ? `Nearest: ${closestZone.zone.zone_name}` : "Connecting to SEIDS..."}
+                        </Text>
+                        {closestZone && (
+                            <Text style={styles.zoneDistanceCenter}>{closestZone.distance}</Text>
+                        )}
+                    </View>
+
+                    {/* ── SIMULATOR JOYSTICK on the right ── */}
+                    <View style={styles.joystickContainer}>
+                        <View style={styles.joystickOuter}>
+                            <Animated.View
+                                style={[
+                                    styles.joystickInner,
+                                    { transform: joystickPan.getTranslateTransform() }
+                                ]}
+                                {...panResponder.panHandlers}
+                            >
+                                <View style={styles.joystickNub} />
+                            </Animated.View>
+                        </View>
+                        <Text style={styles.joystickLabel}>DRIVERS SEAT</Text>
+                    </View>
                 </View>
 
                 {/* Logout floating bottom right */}
@@ -728,14 +823,22 @@ const styles = StyleSheet.create({
         backgroundColor: "#161b22",
         borderTopWidth: 1,
         borderTopColor: "#30363d",
-        paddingHorizontal: 20,
-        paddingVertical: 20,
+        paddingHorizontal: 16,
+        paddingVertical: 10,
         position: "relative",
+    },
+    simulatorBottomContent: {
+        flex: 1,
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+        marginTop: 20,
     },
     zoneCenterContainer: {
         flex: 1,
         justifyContent: "center",
-        alignItems: "center",
+        alignItems: "flex-start",
+        paddingLeft: 20,
         paddingBottom: 30, // nudges the text higher
     },
     zoneNameCenter: {
@@ -750,6 +853,47 @@ const styles = StyleSheet.create({
         fontWeight: "bold",
         letterSpacing: 1,
     },
+    // Joystick
+    joystickContainer: {
+        flex: 1,
+        alignItems: "center",
+        justifyContent: "center",
+    },
+    joystickOuter: {
+        width: 120,
+        height: 120,
+        borderRadius: 60,
+        backgroundColor: "#161b22",
+        borderWidth: 2,
+        borderColor: "#30363d",
+        alignItems: "center",
+        justifyContent: "center",
+    },
+    joystickInner: {
+        width: 60,
+        height: 60,
+        borderRadius: 30,
+        backgroundColor: "#2d333b",
+        borderWidth: 1,
+        borderColor: "#58a6ff",
+        alignItems: "center",
+        justifyContent: "center",
+        elevation: 6,
+    },
+    joystickNub: {
+        width: 20,
+        height: 20,
+        borderRadius: 10,
+        backgroundColor: "#58a6ff",
+        opacity: 0.5,
+    },
+    joystickLabel: {
+        marginTop: 12,
+        color: "#8b949e",
+        fontSize: 10,
+        fontWeight: "bold",
+        letterSpacing: 2,
+    },
     logoutBtnFloating: {
         position: "absolute",
         bottom: 50,
@@ -760,11 +904,17 @@ const styles = StyleSheet.create({
         backgroundColor: "rgba(248, 81, 73, 0.1)",
         alignItems: "center",
         justifyContent: "center",
+        zIndex: 20,
     },
 
-    // Modal
+    // Modal (now an inline overlay over the map)
     modalOverlay: {
-        flex: 1,
+        position: "absolute",
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        zIndex: 100, // ensure it sits on top of map
         backgroundColor: "rgba(0,0,0,0.5)",
         justifyContent: "center",
         alignItems: "center",

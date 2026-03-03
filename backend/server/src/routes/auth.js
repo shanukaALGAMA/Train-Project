@@ -80,4 +80,34 @@ router.post("/login", async (req, res) => {
   }
 });
 
+// ADMIN LOGIN
+router.post("/admin/login", async (req, res) => {
+  const { username, password } = req.body;
+  if (!username || !password)
+    return res.status(400).json({ message: "username and password required" });
+
+  try {
+    const [result] = await pool.query(
+      "SELECT * FROM admins WHERE username = ?", [username]
+    );
+    if (result.length === 0)
+      return res.status(400).json({ message: "Admin not found" });
+
+    const admin = result[0];
+    const valid = await bcrypt.compare(password, admin.password);
+    if (!valid)
+      return res.status(400).json({ message: "Invalid password" });
+
+    const token = jwt.sign(
+      { admin_id: admin.admin_id, username: admin.username, role: "admin" },
+      process.env.JWT_SECRET,
+      { expiresIn: "4h" }
+    );
+    res.json({ token });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
 export default router;

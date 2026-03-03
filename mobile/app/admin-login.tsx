@@ -12,68 +12,50 @@ import * as SecureStore from "expo-secure-store";
 import { useRouter } from "expo-router";
 import { API_BASE } from "../constants/api";
 
-export default function LoginScreen() {
+export default function AdminLoginScreen() {
     const router = useRouter();
-    const [trainName, setTrainName] = useState("");
+    const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
     const [loading, setLoading] = useState(false);
 
     const login = async () => {
-        if (!trainName || !password) {
+        if (!username || !password) {
             Alert.alert("Error", "Please fill in all fields.");
             return;
         }
         setLoading(true);
         try {
-            // ── Try admin login first ──
-            const adminRes = await fetch(`${API_BASE}/data/admin/login`, {
+            const res = await fetch(`${API_BASE}/data/admin/login`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ username: trainName, password }),
+                body: JSON.stringify({ username, password }),
             });
-
-            if (adminRes.ok) {
-                const adminData = await adminRes.json();
-                await SecureStore.setItemAsync("adminToken", adminData.token);
-                router.replace("/admin");
-                return;
-            }
-
-            // ── Fall through to train login ──
-            const res = await fetch(`${API_BASE}/auth/login`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ train_name: trainName, password }),
-            });
-
             const data = await res.json();
             if (!res.ok) {
                 Alert.alert("Login Failed", data.message || "Invalid credentials");
                 return;
             }
-
-            await SecureStore.setItemAsync("token", data.token);
-            router.replace("/dashboard");
+            await SecureStore.setItemAsync("adminToken", data.token);
+            router.replace("/admin");
         } catch {
-            Alert.alert("Error", "Cannot connect to server. Check your network.");
+            Alert.alert("Error", "Cannot connect to server.");
         } finally {
             setLoading(false);
         }
     };
+
     return (
         <View style={styles.container}>
             <View style={styles.card}>
-                <View>
-                    <Text style={styles.title}>SEIDS</Text>
-                    <Text style={styles.subtitle}>Train Safety System</Text>
-                </View>
+                <Text style={styles.title}>⚙ Admin</Text>
+                <Text style={styles.subtitle}>Administrator Access</Text>
 
                 <TextInput
                     style={styles.input}
-                    placeholder="Name"
+                    placeholder="Username"
                     placeholderTextColor="#888"
-                    value={trainName}
-                    onChangeText={setTrainName}
+                    value={username}
+                    onChangeText={setUsername}
                     autoCapitalize="none"
                 />
                 <TextInput
@@ -86,14 +68,12 @@ export default function LoginScreen() {
                 />
 
                 <TouchableOpacity style={styles.loginBtn} onPress={login} disabled={loading}>
-                    {loading ? (
-                        <ActivityIndicator color="#fff" />
-                    ) : (
-                        <Text style={styles.loginBtnText}>LOGIN</Text>
-                    )}
+                    {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.loginBtnText}>LOGIN</Text>}
                 </TouchableOpacity>
 
-
+                <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+                    <Text style={styles.backBtnText}>← Back</Text>
+                </TouchableOpacity>
             </View>
         </View>
     );
@@ -114,21 +94,21 @@ const styles = StyleSheet.create({
         borderRadius: 16,
         padding: 32,
         borderWidth: 1,
-        borderColor: "#30363d",
+        borderColor: "#58a6ff",
     },
     title: {
-        color: "#fff",
-        fontSize: 36,
+        color: "#58a6ff",
+        fontSize: 28,
         fontWeight: "bold",
         textAlign: "center",
-        letterSpacing: 4,
+        letterSpacing: 2,
+        marginBottom: 4,
     },
     subtitle: {
         color: "#8b949e",
-        fontSize: 14,
+        fontSize: 13,
         textAlign: "center",
-        marginBottom: 32,
-        letterSpacing: 1,
+        marginBottom: 28,
     },
     input: {
         backgroundColor: "#0d1117",
@@ -142,11 +122,11 @@ const styles = StyleSheet.create({
         marginBottom: 14,
     },
     loginBtn: {
-        backgroundColor: "#238636",
+        backgroundColor: "#1f6feb",
         borderRadius: 8,
         paddingVertical: 14,
         alignItems: "center",
-        marginTop: 8,
+        marginTop: 4,
     },
     loginBtnText: {
         color: "#fff",
@@ -154,31 +134,12 @@ const styles = StyleSheet.create({
         fontSize: 16,
         letterSpacing: 2,
     },
-    adminBtn: {
-        marginTop: 20,
-        borderWidth: 1,
-        borderColor: "#58a6ff",
-        borderRadius: 8,
-        paddingVertical: 10,
-        alignItems: "center",
-    },
-    adminBtnText: {
-        color: "#58a6ff",
-        fontSize: 14,
-        letterSpacing: 1,
-    },
-    simulatorBtn: {
+    backBtn: {
         marginTop: 16,
-        backgroundColor: "#2d333b",
-        paddingVertical: 12,
-        borderRadius: 8,
         alignItems: "center",
-        borderWidth: 1,
-        borderColor: "#444c56",
     },
-    simulatorBtnText: {
-        color: "#adbac7",
+    backBtnText: {
+        color: "#8b949e",
         fontSize: 14,
-        fontWeight: "bold",
-    }
+    },
 });
