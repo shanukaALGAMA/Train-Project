@@ -29,4 +29,4 @@ mysql> DESCRIBE zones;
 To set the GPS coordinates for ZONE_1, run this in your MySQL terminal:
 UPDATE trainapp.zones SET latitude = 6.841354, longitude = 79.964468 WHERE device_code = 'ZONE_1';
 
-UPDATE trainapp.zones SET status=2 WHERE device_code='ZONE_4';
+UPDATE trainapp.zones SET status=2 WHERE device_code='ZONE_1';

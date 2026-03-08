@@ -440,11 +440,11 @@ export default function SimulatorScreen() {
             <View style={styles.mapContainer}>
                 {/* ── NOTIFICATION OVERLAY (danger → safe transition) ── */}
                 {!!notification && (
-                    <View style={styles.modalOverlay}>
+                    <View style={styles.modalOverlay} pointerEvents="box-none">
                         <View style={[
                             styles.modalCard,
                             notificationClearing && styles.modalCardSafe,
-                        ]}>
+                        ]} pointerEvents="auto">
                             {notificationClearing ? (
                                 /* ── SAFE MODE ── */
                                 <>
