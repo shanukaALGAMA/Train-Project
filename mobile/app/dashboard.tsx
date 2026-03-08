@@ -15,6 +15,7 @@ import * as SecureStore from "expo-secure-store";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { API_BASE } from "../constants/api";
+import { Audio } from 'expo-av';
 
 // Status code to label mapping
 const STATUS_LABEL: Record<number, string> = {
@@ -94,8 +95,10 @@ export default function DashboardScreen() {
 
     const alarmOverriddenRef = useRef(false);
     const [alarmOverridden, setAlarmOverridden] = useState(false);
+    const [brakeApplied, setBrakeApplied] = useState(false);
     const lastAlarmCmdRef = useRef<"ON" | "OFF" | null>(null);
     const lastBrakeCmdRef = useRef<"ON" | "OFF" | null>(null);
+    const sirenSoundRef = useRef<Audio.Sound | null>(null);
     const locationRef = useRef<{ lat: number; lon: number; accuracy: number } | null>(null);
     const clearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -109,6 +112,67 @@ export default function DashboardScreen() {
 
     // Polling interval ref
     const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+    // ─────────────────────────────
+    // AUDIO CONTROL
+    // ─────────────────────────────
+    useEffect(() => {
+        // Initialize audio engine
+        Audio.setAudioModeAsync({
+            allowsRecordingIOS: false,
+            playsInSilentModeIOS: true,
+            shouldDuckAndroid: true,
+            playThroughEarpieceAndroid: false,
+        });
+
+        return () => {
+            // Cleanup sound on unmount
+            if (sirenSoundRef.current) {
+                sirenSoundRef.current.unloadAsync();
+            }
+        }
+    }, []);
+
+    const playSiren = async () => {
+        try {
+            if (!sirenSoundRef.current) {
+                const { sound } = await Audio.Sound.createAsync(
+                    require('../assets/siren.wav'),
+                    { shouldPlay: true, isLooping: true }
+                );
+                sirenSoundRef.current = sound;
+            } else {
+                const status = await sirenSoundRef.current.getStatusAsync();
+                if (status.isLoaded && !status.isPlaying) {
+                    await sirenSoundRef.current.playAsync();
+                } else if (!status.isLoaded) {
+                    // The sound was unloaded, meaning the player was destroyed. Re-create it.
+                    const { sound } = await Audio.Sound.createAsync(
+                        require('../assets/siren.wav'),
+                        { shouldPlay: true, isLooping: true }
+                    );
+                    sirenSoundRef.current = sound;
+                }
+            }
+        } catch (error) {
+            console.error("Error playing siren: ", error);
+            sirenSoundRef.current = null; // Reset so it tries to create next time
+        }
+    };
+
+    const stopSiren = async () => {
+        try {
+            if (sirenSoundRef.current) {
+                const status = await sirenSoundRef.current.getStatusAsync();
+                if (status.isLoaded && status.isPlaying) {
+                    await sirenSoundRef.current.stopAsync();
+                }
+            }
+        } catch (error) {
+            console.error("Error stopping siren: ", error);
+            sirenSoundRef.current = null;
+        }
+    };
 
     // ─────────────────────────────
     // LIVE GPS (1-second updates)
@@ -253,12 +317,16 @@ export default function DashboardScreen() {
                 if (!alarmOverriddenRef.current && lastAlarmCmdRef.current !== "ON") {
                     sendCommand("ALARM", "ON");
                     lastAlarmCmdRef.current = "ON";
+                    playSiren();
                 }
 
                 // Automatic Brake at 2km if NOT acknowledged
-                if (nearest.distKm <= 2 && !alarmOverriddenRef.current && lastBrakeCmdRef.current !== "ON") {
-                    sendCommand("BRAKE", "ON");
-                    lastBrakeCmdRef.current = "ON";
+                if (nearest.distKm <= 2 && !alarmOverriddenRef.current) {
+                    if (lastBrakeCmdRef.current !== "ON") {
+                        sendCommand("BRAKE", "ON");
+                        lastBrakeCmdRef.current = "ON";
+                        setBrakeApplied(true);
+                    }
                 }
             } else {
                 // Closest zone is SAFE — transition notification to safe then auto-close
@@ -273,10 +341,12 @@ export default function DashboardScreen() {
                         if (lastAlarmCmdRef.current !== "OFF") {
                             sendCommand("ALARM", "OFF");
                             lastAlarmCmdRef.current = "OFF";
+                            stopSiren();
                         }
                         if (lastBrakeCmdRef.current !== "OFF") {
                             sendCommand("BRAKE", "OFF");
                             lastBrakeCmdRef.current = "OFF";
+                            setBrakeApplied(false);
                         }
                         clearTimerRef.current = setTimeout(() => {
                             setNotification(null);
@@ -407,6 +477,13 @@ export default function DashboardScreen() {
                                     );
                                 })()}
 
+                                {/* EMERGENCY BRAKE UI */}
+                                {brakeApplied && (
+                                    <View style={styles.brakeBanner}>
+                                        <Text style={styles.brakeBannerText}>⚠️ EMERGENCY BRAKES APPLIED</Text>
+                                    </View>
+                                )}
+
                                 <Text style={styles.modalStatus}>
                                     Status:{" "}
                                     <Text style={styles.modalStatusValue}>
@@ -429,10 +506,12 @@ export default function DashboardScreen() {
 
                                         sendCommand("ALARM", "OFF");
                                         lastAlarmCmdRef.current = "OFF";
+                                        stopSiren();
 
                                         if (lastBrakeCmdRef.current === "ON") {
                                             sendCommand("BRAKE", "OFF");
                                             lastBrakeCmdRef.current = "OFF";
+                                            setBrakeApplied(false);
                                         }
                                     }
                                 }}
@@ -779,6 +858,20 @@ const styles = StyleSheet.create({
         borderWidth: 2,
         borderColor: "#da3633",
         alignItems: "center",
+    },
+    brakeBanner: {
+        backgroundColor: "#da3633",
+        paddingVertical: 8,
+        paddingHorizontal: 16,
+        borderRadius: 8,
+        marginTop: 12,
+        marginBottom: 8,
+    },
+    brakeBannerText: {
+        color: "#fff",
+        fontSize: 14,
+        fontWeight: "bold",
+        textAlign: "center",
     },
     modalIcon: { marginBottom: 12 },
     modalTitle: {
